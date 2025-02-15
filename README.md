@@ -335,7 +335,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
-- `make clean`: **CAUTION** removes all non-source artifacts from the repository.
+- `make clean`: Deletes all build results, such as `.so` or `.dll` files.
+- `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
@@ -428,6 +429,14 @@ Join our community of users and contributors on [Discord](https://discord.gg/AUW
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
 
+> [!WARNING]
+>
+> NautilusTrader does not issue, promote, or endorse any cryptocurrency tokens. Any claims or communications suggesting otherwise are unauthorized and false.
+>
+> All official updates and communications from NautilusTrader will be shared exclusively through https://nautilustrader.io, our official Discord server, or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
+>
+> If you encounter any suspicious activity, please report it to the appropriate platform and contact us at info@nautechsystems.io.
+
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
@@ -445,4 +454,4 @@ For more information, visit https://nautilustrader.io.
 Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ns-logo.png "nautechsystems")
-<img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ferris.png" width="128">

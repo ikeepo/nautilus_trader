@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pandas as pd
+
 from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_provider
 from nautilus_trader.common.component import init_logging
@@ -25,18 +27,20 @@ from nautilus_trader.core import nautilus_pyo3
 
 async def run():
     nautilus_pyo3.init_tracing()
-    init_logging(level_stdout=LogLevel.TRACE)
+    _guard = init_logging(level_stdout=LogLevel.TRACE)
 
-    _guard = init_logging()
     http_client = get_tardis_http_client()
 
     # Test loading all instrument for specified exchanges
-    exchanges = ["deribit"]
+    exchanges = ["binance-delivery"]
     filters = {
         "venues": frozenset(exchanges),
-        "quote_currency": frozenset(["BTC"]),
-        # "base_currency": frozenset(["USDT"]),
-        "instrument_type": frozenset(["option"]),
+        # "quote_currency": frozenset(["BTC"]),
+        # "base_currency": frozenset(["USDC"]),
+        "instrument_type": frozenset(["perpetual"]),
+        "start": pd.Timestamp("2021-01-01").value,
+        "end": pd.Timestamp("2023-01-01").value,
+        "effective": pd.Timestamp("2022-01-01").value,
     }
 
     # config = InstrumentProviderConfig(load_all=True, filters=filters)
@@ -55,6 +59,11 @@ async def run():
     provider = get_tardis_instrument_provider(http_client, config)
 
     await provider.initialize()
+
+    for instrument in provider.list_all():
+        print(instrument.id)
+
+    print(f"Loaded {len(provider.list_all())} instruments")
 
 
 if __name__ == "__main__":
