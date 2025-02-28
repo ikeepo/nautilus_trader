@@ -22,7 +22,7 @@ use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, BookLevel, OrderBook},
+    orderbook::{BookLevel, OrderBook, analysis::book_check_integrity},
     types::{Price, Quantity},
 };
 
@@ -247,6 +247,7 @@ impl OrderBook {
         self.simulate_fills(order)
     }
 
+    #[pyo3(signature = (num_levels=3))]
     #[pyo3(name = "pprint")]
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)

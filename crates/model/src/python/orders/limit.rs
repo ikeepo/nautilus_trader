@@ -15,8 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use pyo3::{
     basic::CompareOp,
@@ -32,11 +32,12 @@ use crate::{
     },
     events::order::initialized::OrderInitialized,
     identifiers::{
-        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::{
-        base::{str_indexmap_to_ustr, Order, OrderCore},
         LimitOrder,
+        base::{Order, OrderCore, str_indexmap_to_ustr},
     },
     python::{common::commissions_from_indexmap, events::order::pyobject_to_order_event},
     types::{Price, Quantity},
@@ -107,8 +108,8 @@ impl LimitOrder {
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
             _ => py.NotImplemented(),
         }
     }
@@ -125,6 +126,12 @@ impl LimitOrder {
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
         Ok(LimitOrder::from(init))
+    }
+
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> OrderStatus {
+        self.status
     }
 
     #[getter]
@@ -146,15 +153,45 @@ impl LimitOrder {
     }
 
     #[getter]
+    #[pyo3(name = "symbol")]
+    fn py_symbol(&self) -> Symbol {
+        self.symbol()
+    }
+
+    #[getter]
+    #[pyo3(name = "venue")]
+    fn py_venue(&self) -> Venue {
+        self.venue()
+    }
+
+    #[getter]
     #[pyo3(name = "client_order_id")]
     fn py_client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
 
     #[getter]
-    #[pyo3(name = "order_type")]
-    fn py_order_type(&self) -> OrderType {
-        self.order_type
+    #[pyo3(name = "venue_order_id")]
+    fn py_venue_order_id(&self) -> Option<VenueOrderId> {
+        self.venue_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "position_id")]
+    fn py_position_id(&self) -> Option<PositionId> {
+        self.position_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_accound_id(&self) -> Option<AccountId> {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "last_trade_id")]
+    fn py_last_trade_id(&self) -> Option<TradeId> {
+        self.last_trade_id
     }
 
     #[getter]
@@ -164,15 +201,21 @@ impl LimitOrder {
     }
 
     #[getter]
+    #[pyo3(name = "order_type")]
+    fn py_order_type(&self) -> OrderType {
+        self.order_type
+    }
+
+    #[getter]
     #[pyo3(name = "quantity")]
     fn py_quantity(&self) -> Quantity {
         self.quantity
     }
 
     #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> Price {
-        self.price
+    #[pyo3(name = "time_in_force")]
+    fn py_time_in_force(&self) -> TimeInForce {
+        self.time_in_force
     }
 
     #[getter]
@@ -182,15 +225,9 @@ impl LimitOrder {
     }
 
     #[getter]
-    #[pyo3(name = "status")]
-    fn py_status(&self) -> OrderStatus {
-        self.status
-    }
-
-    #[getter]
-    #[pyo3(name = "time_in_force")]
-    fn py_time_in_force(&self) -> TimeInForce {
-        self.time_in_force
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Price {
+        self.price
     }
 
     #[getter]
@@ -279,7 +316,7 @@ impl LimitOrder {
 
     #[getter]
     #[pyo3(name = "filled_qty")]
-    fn py_venue_order_id(&self) -> Quantity {
+    fn py_filled_qty(&self) -> Quantity {
         self.filled_qty
     }
 
@@ -354,21 +391,27 @@ impl LimitOrder {
     }
 
     #[getter]
-    #[pyo3(name = "init_id")]
-    fn py_init_id(&self) -> UUID4 {
-        self.init_id
-    }
-
-    #[getter]
     #[pyo3(name = "display_qty")]
     fn py_display_qty(&self) -> Option<Quantity> {
         self.display_qty
     }
 
     #[getter]
+    #[pyo3(name = "init_id")]
+    fn py_init_id(&self) -> UUID4 {
+        self.init_id
+    }
+
+    #[getter]
     #[pyo3(name = "ts_init")]
     fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_last")]
+    fn py_ts_last(&self) -> u64 {
+        self.ts_last.as_u64()
     }
 
     #[staticmethod]

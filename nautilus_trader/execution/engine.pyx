@@ -33,6 +33,7 @@ import time
 from decimal import Decimal
 
 from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import ExecutionReport
@@ -56,7 +57,9 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -147,6 +150,7 @@ cdef class ExecutionEngine(Component):
 
         # Configuration
         self.debug: bool = config.debug
+        self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions
         self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
@@ -360,6 +364,18 @@ cdef class ExecutionEngine(Component):
             clients.add(client)
 
         return clients
+
+    cpdef void set_manage_own_order_books(self, bint value):
+        """
+        Set the `manage_own_order_books` setting with the given `value`.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self.manage_own_order_books = value
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -660,6 +676,16 @@ cdef class ExecutionEngine(Component):
         self._cache.check_integrity()
         self._set_position_id_counts()
 
+        cdef Order order
+        if self.manage_own_order_books:
+            for order in self._cache.orders():
+                if order.is_closed_c() or not self._should_handle_own_book_order(order):
+                    continue
+                own_book = self._get_or_init_own_order_book(order.instrument_id)
+                own_book_order = order.to_own_book_order()
+                self._log.debug(f"Adding: {own_book_order!r}", LogColor.MAGENTA)
+                own_book.add(own_book_order)
+
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
 
     cpdef void execute(self, TradingCommand command):
@@ -794,6 +820,23 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
+    cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id):
+        own_book = self._cache.own_order_book(instrument_id)
+        if own_book is None:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+            own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
+            self._cache.add_own_order_book(own_book)
+        return own_book
+
+    cpdef void _insert_own_book_order(self, Order order):
+        if not self._should_handle_own_book_order(order):
+            return
+        own_book = self._get_or_init_own_order_book(order.instrument_id)
+        own_book.add(order.to_own_book_order())
+
+    cdef bint _should_handle_own_book_order(self, Order order):
+        return order.order_type != OrderType.MARKET and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK
+
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _execute_command(self, TradingCommand command):
@@ -850,6 +893,9 @@ cdef class ExecutionEngine(Component):
             )
             return
 
+        if self.manage_own_order_books:
+            self._insert_own_book_order(order)
+
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity base_qty = None
@@ -880,6 +926,12 @@ cdef class ExecutionEngine(Component):
                 f"no instrument found for {command.instrument_id}, {command}"
             )
             return
+
+        if self.manage_own_order_books:
+            own_book = self._get_or_init_own_order_book(instrument.id)
+            for order in command.order_list.orders:
+                if self._should_handle_own_book_order(order):
+                    own_book.add(order.to_own_book_order())
 
         # Check if converting quote quantity
         cdef Price last_px = None
@@ -1095,6 +1147,14 @@ cdef class ExecutionEngine(Component):
             return
 
         self._cache.update_order(order)
+
+        if self.manage_own_order_books and self._should_handle_own_book_order(order):
+            own_book = self._get_or_init_own_order_book(order.instrument_id)
+            if order.is_closed_c():
+                own_book.delete(order.to_own_book_order())
+            else:
+                own_book.update(order.to_own_book_order())
+
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",
             msg=event,

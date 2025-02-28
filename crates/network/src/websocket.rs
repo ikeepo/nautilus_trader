@@ -31,30 +31,29 @@
 
 use std::{
     sync::{
-        atomic::{AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
 
 use futures_util::{
-    stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
+    stream::{SplitSink, SplitStream},
 };
 use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex};
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{client::IntoClientRequest, http::HeaderValue, Error, Message},
-    MaybeTlsStream, WebSocketStream,
+    MaybeTlsStream, WebSocketStream, connect_async,
+    tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
 use crate::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
-    ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter},
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
@@ -464,6 +463,10 @@ pub struct WebSocketClient {
 
 impl WebSocketClient {
     /// Creates a websocket client that returns a stream for reading messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
     #[allow(clippy::too_many_arguments)]
     pub async fn connect_stream(
         config: WebSocketConfig,
@@ -500,6 +503,10 @@ impl WebSocketClient {
     ///
     /// Creates an inner client and controller task to reconnect or disconnect
     /// the client. Also assumes ownership of writer from inner client.
+    ///
+    /// # Errors
+    ///
+    /// Returns any websocket error.
     pub async fn connect(
         config: WebSocketConfig,
         post_connection: Option<PyObject>,
@@ -618,20 +625,27 @@ impl WebSocketClient {
         }
     }
 
-    pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) -> Result<(), Error> {
+    /// Sends the given text `data` to the server.
+    pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) {
         self.rate_limiter.await_keys_ready(keys).await;
         tracing::trace!("Sending text: {data:?}");
         let mut guard = self.writer.lock().await;
-        guard.send(Message::Text(data.into())).await
+        if let Err(e) = guard.send(Message::Text(data.into())).await {
+            tracing::error!("Error sending message: {e}");
+        }
     }
 
-    pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) -> Result<(), Error> {
+    /// Sends the given bytes `data` to the server.
+    pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) {
         self.rate_limiter.await_keys_ready(keys).await;
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
-        guard.send(Message::Binary(data.into())).await
+        if let Err(e) = guard.send(Message::Binary(data.into())).await {
+            tracing::error!("Error sending message: {e}");
+        }
     }
 
+    /// Sends a close message to the server.
     pub async fn send_close_message(&self) {
         let mut guard = self.writer.lock().await;
         match guard.send(Message::Close(None)).await {
@@ -647,7 +661,7 @@ impl WebSocketClient {
         post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Starting task 'controller'");
+            tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
 
@@ -895,10 +909,10 @@ mod tests {
         let client = setup_test_client(server.port).await;
 
         // 1) Send normal message
-        client.send_text("Hello".into(), None).await.unwrap();
+        client.send_text("Hello".into(), None).await;
 
         // 2) Trigger forced close from server
-        client.send_text("close-now".into(), None).await.unwrap();
+        client.send_text("close-now".into(), None).await;
 
         // 3) Wait a bit => read loop sees close => reconnect
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -942,11 +956,11 @@ mod tests {
         .unwrap();
 
         // First 2 should succeed
-        client.send_text("test1".into(), None).await.unwrap();
-        client.send_text("test2".into(), None).await.unwrap();
+        client.send_text("test1".into(), None).await;
+        client.send_text("test2".into(), None).await;
 
         // Third should error
-        client.send_text("test3".into(), None).await.unwrap();
+        client.send_text("test3".into(), None).await;
 
         // Cleanup
         client.disconnect().await;
@@ -962,7 +976,7 @@ mod tests {
         for i in 0..10 {
             let client = client.clone();
             handles.push(task::spawn(async move {
-                client.send_text(format!("test{i}"), None).await.unwrap();
+                client.send_text(format!("test{i}"), None).await;
             }));
         }
 

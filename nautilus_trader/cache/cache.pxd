@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.actor cimport Actor
@@ -53,7 +54,6 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class Cache(CacheFacade):
     cdef Logger _log
     cdef CacheDatabaseFacade _database
-    cdef ExchangeRateCalculator _xrate_calculator
 
     cdef dict _general
     cdef dict _xrate_symbols
@@ -61,6 +61,7 @@ cdef class Cache(CacheFacade):
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
+    cdef dict _own_order_books
     cdef dict _bars
     cdef dict _bars_bid
     cdef dict _bars_ask
@@ -74,6 +75,7 @@ cdef class Cache(CacheFacade):
     cdef dict _position_snapshots
     cdef dict _greeks
     cdef dict _yield_curves
+    cdef dict[tuple[Currency, Currency], double] _mark_xrates
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -150,6 +152,7 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, Strategy strategy)
 
     cpdef void add_order_book(self, OrderBook order_book)
+    cpdef void add_own_order_book(self, own_order_book)
     cpdef void add_mark_price(self, InstrumentId instrument_id, Price price)
     cpdef void add_quote_tick(self, QuoteTick tick)
     cpdef void add_trade_tick(self, TradeTick tick)
@@ -190,3 +193,9 @@ cdef class Cache(CacheFacade):
         object price_type=*,
         aggregation_source=*,
     )
+
+
+cdef dict[Decimal, list[Order]] process_own_order_map(
+    dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
+    dict[ClientOrderId, Order] order_cache,
+)

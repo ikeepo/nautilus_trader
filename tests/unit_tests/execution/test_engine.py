@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.cache.cache import Cache
@@ -22,6 +24,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import InvalidConfiguration
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -38,6 +41,7 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
@@ -2295,3 +2299,307 @@ class TestExecutionEngine:
         assert not bracket.orders[0].is_quote_quantity
         assert not bracket.orders[1].is_quote_quantity
         assert not bracket.orders[2].is_quote_quantity
+
+    def test_submit_market_should_not_add_to_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert self.cache.own_order_book(order.instrument_id) is None
+
+    @pytest.mark.parametrize(
+        ("time_in_force"),
+        [
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        ],
+    )
+    def test_submit_ioc_fok_should_not_add_to_own_book(self, time_in_force: TimeInForce) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+            time_in_force=time_in_force,
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert self.cache.own_order_book(order.instrument_id) is None
+
+    def test_submit_order_adds_to_own_book_bid(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert own_book.event_count == 1
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 1
+        assert len(own_book.bids_to_dict()[Decimal("10.0")]) == 1
+        own_order = own_book.bids_to_dict()[Decimal("10.0")][0]
+        assert own_order.client_order_id.value == order.client_order_id.value
+        assert own_order.price == Decimal("10.0")
+        assert own_order.size == Decimal(100_000)
+        assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
+        assert self.cache.own_bid_orders(order.instrument_id) == {Decimal("10.0"): [order]}
+        assert self.cache.own_ask_orders(order.instrument_id) == {}
+
+    def test_submit_order_adds_to_own_book_ask(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert own_book.event_count == 1
+        assert len(own_book.asks_to_dict()) == 1
+        assert len(own_book.bids_to_dict()) == 0
+        assert len(own_book.asks_to_dict()[Decimal("11.0")]) == 1
+        own_order = own_book.asks_to_dict()[Decimal("11.0")][0]
+        assert own_order.client_order_id.value == order.client_order_id.value
+        assert own_order.price == Decimal("11.0")
+        assert own_order.size == Decimal(100_000)
+        assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
+        assert self.cache.own_ask_orders(order.instrument_id) == {Decimal("11.0"): [order]}
+        assert self.cache.own_bid_orders(order.instrument_id) == {}
+
+    def test_cancel_order_removes_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_canceled(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_canceled(order_ask))
+
+        # Act
+        strategy.cancel_order(order_bid)
+        strategy.cancel_order(order_ask)
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.event_count == 8
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(instrument.id) == {}
+        assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_filled_order_removes_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_filled(order_bid, instrument))
+        self.exec_engine.process(TestEventStubs.order_filled(order_ask, instrument))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.event_count == 8
+        assert len(own_book.asks_to_dict()) == 0
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(instrument.id) == {}
+        assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_order_updates_in_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        order_bid = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        order_ask = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("11.0"),
+        )
+
+        strategy.submit_order(order_bid)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_bid))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_bid))
+
+        strategy.submit_order(order_ask)
+        self.exec_engine.process(TestEventStubs.order_submitted(order_ask))
+        self.exec_engine.process(TestEventStubs.order_accepted(order_ask))
+
+        # Act
+        new_bid_price = Price.from_str("9.0")
+        new_ask_price = Price.from_str("12.0")
+        self.exec_engine.process(TestEventStubs.order_updated(order_bid, price=new_bid_price))
+        self.exec_engine.process(TestEventStubs.order_updated(order_ask, price=new_ask_price))
+
+        # Assert
+        own_book = self.cache.own_order_book(instrument.id)
+        assert own_book.event_count == 8
+        assert len(own_book.asks_to_dict()) == 1
+        assert len(own_book.bids_to_dict()) == 1
+        assert len(own_book.asks_to_dict()[Decimal("12.0")]) == 1
+        assert len(own_book.bids_to_dict()[Decimal("9.0")]) == 1
+
+        own_order_bid = own_book.bids_to_dict()[Decimal("9.0")][0]
+        assert own_order_bid.client_order_id.value == order_bid.client_order_id.value
+        assert own_order_bid.price == new_bid_price
+        assert own_order_bid.status == nautilus_pyo3.OrderStatus.ACCEPTED
+
+        own_order_ask = own_book.asks_to_dict()[Decimal("12.0")][0]
+        assert own_order_ask.client_order_id.value == order_ask.client_order_id.value
+        assert own_order_ask.price == new_ask_price
+        assert own_order_ask.status == nautilus_pyo3.OrderStatus.ACCEPTED
+
+        assert self.cache.own_bid_orders(instrument.id) == {Decimal("9.0"): [order_bid]}
+        assert self.cache.own_ask_orders(instrument.id) == {Decimal("12.0"): [order_ask]}

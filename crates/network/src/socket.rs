@@ -19,8 +19,8 @@
 use std::{
     path::Path,
     sync::{
-        atomic::{AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
@@ -33,14 +33,14 @@ use tokio::{
     sync::Mutex,
 };
 use tokio_tungstenite::{
-    tungstenite::{client::IntoClientRequest, stream::Mode, Error},
     MaybeTlsStream,
+    tungstenite::{Error, client::IntoClientRequest, stream::Mode},
 };
 
 use crate::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
-    tls::{create_tls_config_from_certs_dir, tcp_tls, Connector},
+    tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
@@ -425,6 +425,11 @@ pub struct SocketClient {
 }
 
 impl SocketClient {
+    /// Connect to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
     pub async fn connect(
         config: SocketConfig,
         post_connection: Option<PyObject>,
@@ -533,6 +538,11 @@ impl SocketClient {
         }
     }
 
+    /// Sends a message of the given `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any I/O error.
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
         if self.is_closed() {
             return Err(std::io::Error::new(
@@ -589,7 +599,7 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Starting task 'controller'");
+            tracing::debug!("Started task 'controller'");
 
             let check_interval = Duration::from_millis(10);
 
@@ -659,12 +669,13 @@ mod tests {
     use std::{ffi::CString, net::TcpListener};
 
     use nautilus_common::testing::wait_until_async;
+    use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::prepare_freethreaded_python;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpStream,
         task,
-        time::{sleep, Duration},
+        time::{Duration, sleep},
     };
 
     use super::*;
@@ -696,9 +707,12 @@ counter = Counter()
         let module = CString::new("test".to_string()).unwrap();
         Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
-            let counter = pymod.getattr("counter").unwrap().into_py(py);
+            let counter = pymod.getattr("counter").unwrap().into_py_any_unwrap(py);
 
-            counter.getattr(py, "handler").unwrap().into_py(py)
+            counter
+                .getattr(py, "handler")
+                .unwrap()
+                .into_py_any_unwrap(py)
         })
     }
 
@@ -955,7 +969,7 @@ def handler(bytes_data):
         let handler = Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let func = pymod.getattr("handler").unwrap();
-            Arc::new(func.into_py(py))
+            Arc::new(func.into_py_any_unwrap(py))
         });
 
         let config = SocketConfig {

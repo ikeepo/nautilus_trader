@@ -767,7 +767,6 @@ cdef class DataEngine(Component):
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
-
         cdef:
             uint64_t interval_ns
             uint64_t timestamp_ns
@@ -1237,6 +1236,9 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
+        request.start = time_object_to_dt(request.start)
+        request.end = time_object_to_dt(request.end)
+
         if isinstance(request, RequestInstruments):
             self._handle_request_instruments(client, request)
         elif isinstance(request, RequestInstrument):
@@ -1253,11 +1255,8 @@ cdef class DataEngine(Component):
             self._handle_request_data(client, request)
 
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
-
-        cdef bint update_catalog = request.params.get("update_catalog", False)
-        if self._catalogs and not update_catalog:
+        update_catalog_mode = request.params.get("update_catalog_mode", None)
+        if self._catalogs and update_catalog_mode is None:
             self._query_catalog(request)
             return
 
@@ -1270,8 +1269,6 @@ cdef class DataEngine(Component):
         client.request_instruments(request)
 
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=Instrument,
             instrument_id=request.instrument_id,
@@ -1299,8 +1296,6 @@ cdef class DataEngine(Component):
         client.request_order_book_snapshot(request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=QuoteTick,
             instrument_id=request.instrument_id,
@@ -1327,8 +1322,6 @@ cdef class DataEngine(Component):
         client.request_quote_ticks(request)
 
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=TradeTick,
             instrument_id=request.instrument_id,
@@ -1355,8 +1348,6 @@ cdef class DataEngine(Component):
         client.request_trade_ticks(request)
 
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=Bar,
             bar_type=request.bar_type,
@@ -1383,8 +1374,6 @@ cdef class DataEngine(Component):
         client.request_bars(request)
 
     cpdef void _handle_request_data(self, DataClient client, RequestData request):
-        request.start = time_object_to_dt(request.start)
-        request.end = time_object_to_dt(request.end)
         last_timestamp = self._catalogs_last_timestamp(
             data_cls=request.data_type.type,
         )[0]
@@ -1482,7 +1471,7 @@ cdef class DataEngine(Component):
             )
 
         params = request.params.copy()
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
 
         response = DataResponse(
             client_id=request.client_id,
@@ -1524,11 +1513,11 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}")
 
-    cpdef void _handle_instrument(self, Instrument instrument, bint update_catalog = False):
+    cpdef void _handle_instrument(self, Instrument instrument, update_catalog_mode: CatalogWriteMode | None = None):
         self._cache.add_instrument(instrument)
 
-        if update_catalog:
-            self._update_catalog([instrument], is_instrument=True)
+        if update_catalog_mode is not None:
+            self._update_catalog([instrument], update_catalog_mode, is_instrument=True)
 
         self._msgbus.publish_c(
             topic=f"data.instrument"
@@ -1706,7 +1695,7 @@ cdef class DataEngine(Component):
 
         self.response_count += 1
         correlation_id = response.correlation_id
-        update_catalog = response.params.get("update_catalog", False)
+        update_catalog_mode = response.params.get("update_catalog_mode", None)
 
         if type(response.data) is list:
             response_data = response.data
@@ -1714,9 +1703,9 @@ cdef class DataEngine(Component):
             # For request_instrument case
             response_data = [response.data]
 
-        if update_catalog and response.data_type.type != Instrument:
+        if update_catalog_mode is not None and response.data_type.type != Instrument:
             # For instruments we want to handle each instrument individually
-            self._update_catalog(response_data)
+            self._update_catalog(response_data, update_catalog_mode)
 
         # We may need to join responses from a catalog and a client
         response_data = self._handle_query_group(correlation_id, response_data)
@@ -1729,9 +1718,9 @@ cdef class DataEngine(Component):
 
         if response.data_type.type == Instrument:
             if isinstance(response.data, list):
-                self._handle_instruments(response.data, update_catalog)
+                self._handle_instruments(response.data, update_catalog_mode)
             else:
-                self._handle_instrument(response.data, update_catalog)
+                self._handle_instrument(response.data, update_catalog_mode)
         elif response.data_type.type == QuoteTick:
             if response.params.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.params)
@@ -1752,7 +1741,7 @@ cdef class DataEngine(Component):
 
         self._msgbus.response(response)
 
-    cpdef void _update_catalog(self, list ticks, bint is_instrument = False):
+    cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode | None, bint is_instrument = False):
         if len(ticks) == 0:
             return
 
@@ -1775,7 +1764,7 @@ cdef class DataEngine(Component):
             last_timestamp_catalog = self._catalogs[0]
 
         if last_timestamp_catalog is not None:
-            last_timestamp_catalog.write_data(ticks, mode="append")
+            last_timestamp_catalog.write_data(ticks, mode=update_catalog_mode)
         else:
             self._log.warning("No catalog available for appending data.")
 
@@ -1827,10 +1816,10 @@ cdef class DataEngine(Component):
 
         return result
 
-    cpdef void _handle_instruments(self, list instruments, bint update_catalog = False):
+    cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = None):
         cdef Instrument instrument
         for instrument in instruments:
-            self._handle_instrument(instrument, update_catalog)
+            self._handle_instrument(instrument, update_catalog_mode)
 
     cpdef void _handle_quote_ticks(self, list ticks):
         self._cache.add_quote_ticks(ticks)
@@ -1895,9 +1884,7 @@ cdef class DataEngine(Component):
                     )
                     continue
 
-                # Create aggregator
                 aggregator = self._create_bar_aggregator(instrument, bar_type)
-
                 if params["update_subscriptions"]:
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
@@ -2045,7 +2032,6 @@ cdef class DataEngine(Component):
         aggregator = self._bar_aggregators.get(command.bar_type.standard())
 
         if aggregator is None:
-            # Create aggregator
             aggregator = self._create_bar_aggregator(instrument, command.bar_type)
 
         # Set if awaiting initial partial bar
@@ -2063,7 +2049,16 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            self._handle_subscribe_bars(client, command)
+            subscribe = SubscribeBars(
+                composite_bar_type,
+                command.await_partial,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_bars(client, subscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
@@ -2072,7 +2067,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
-            self._handle_subscribe_trade_ticks(client, SubscribeTradeTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            subscribe = SubscribeTradeTicks(
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_trade_ticks(client, subscribe)
         else:
             self._msgbus.subscribe(
                 topic=f"data.quotes"
@@ -2081,7 +2084,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
-            self._handle_subscribe_quote_ticks(client, SubscribeQuoteTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            subscribe = SubscribeQuoteTicks(
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_subscribe_quote_ticks(client, subscribe)
 
         aggregator.is_running = True
 
@@ -2105,8 +2116,15 @@ cdef class DataEngine(Component):
                 topic=f"data.bars.{composite_bar_type}",
                 handler=aggregator.handle_bar,
             )
-            command.bar_type = composite_bar_type
-            self._handle_unsubscribe_bars(client, command)
+            unsubscribe = UnsubscribeBars(
+                composite_bar_type,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_bars(client, unsubscribe)
         elif command.bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
@@ -2114,7 +2132,15 @@ cdef class DataEngine(Component):
                       f".{command.bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
             )
-            self._handle_unsubscribe_trade_ticks(client, UnsubscribeTradeTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            unsubscribe = UnsubscribeTradeTicks(
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_trade_ticks(client, unsubscribe)
         else:
             self._msgbus.unsubscribe(
                 topic=f"data.quotes"
@@ -2122,7 +2148,15 @@ cdef class DataEngine(Component):
                       f".{command.bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
             )
-            self._handle_unsubscribe_quote_ticks(client, UnsubscribeQuoteTicks(command.id, command.bar_type.instrument_id, command.client_id, command.venue, command.ts_init, command.params))
+            unsubscribe = UnsubscribeQuoteTicks(
+                command.bar_type.instrument_id,
+                command.client_id,
+                command.venue,
+                command.id,
+                command.ts_init,
+                command.params
+            )
+            self._handle_unsubscribe_quote_ticks(client, unsubscribe)
 
         # Remove from aggregators
         del self._bar_aggregators[command.bar_type.standard()]

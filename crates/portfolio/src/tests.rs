@@ -18,30 +18,30 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
-    use nautilus_core::{UnixNanos, UUID4};
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Bar, BarType, QuoteTick},
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{
-            account::stubs::cash_account_state,
-            order::stubs::{order_accepted, order_filled, order_submitted},
             AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
             PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+            account::stubs::cash_account_state,
+            order::stubs::{order_accepted, order_filled, order_submitted},
         },
         identifiers::{
-            stubs::{account_id, uuid4},
             AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
+            stubs::{account_id, uuid4},
         },
         instruments::{
-            stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
             CryptoPerpetual, CurrencyPair, InstrumentAny,
+            stubs::{audusd_sim, currency_pair_btcusdt, default_fx_ccy, ethusdt_bitmex},
         },
         orders::{OrderAny, OrderTestBuilder},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::{fixture, rstest};
-    use rust_decimal::{prelude::FromPrimitive, Decimal};
+    use rust_decimal::{Decimal, prelude::FromPrimitive};
 
     use crate::portfolio::Portfolio;
 
@@ -107,7 +107,7 @@ mod tests {
             Rc::new(RefCell::new(msgbus)),
             Rc::new(RefCell::new(simple_cache)),
             Rc::new(RefCell::new(clock)),
-            true,
+            None,
         )
     }
 
@@ -500,7 +500,7 @@ mod tests {
         let mut order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("1000000"))
+            .quantity(Quantity::from("1000000.000"))
             .build();
 
         portfolio
@@ -620,7 +620,7 @@ mod tests {
         let mut order1 = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("100.0"))
+            .quantity(Quantity::from("100.000"))
             .price(Price::new(55.0, 1))
             .trigger_price(Price::new(35.0, 1))
             .build();
@@ -628,7 +628,7 @@ mod tests {
         let order2 = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("1000.0"))
+            .quantity(Quantity::from("1000.000"))
             .price(Price::new(45.0, 1))
             .trigger_price(Price::new(30.0, 1))
             .build();

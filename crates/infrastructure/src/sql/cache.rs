@@ -29,7 +29,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
+    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -40,7 +40,7 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
-use sqlx::{postgres::PgConnectOptions, PgPool};
+use sqlx::{PgPool, postgres::PgConnectOptions};
 use tokio::try_join;
 use ustr::Ustr;
 
@@ -389,7 +389,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
+    async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
         let pool = self.pool.clone();
         let code = code.to_owned(); // Clone the code
         let (tx, rx) = std::sync::mpsc::channel();
@@ -412,7 +412,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_instrument(
+    async fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
@@ -438,11 +438,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument> {
+    async fn load_synthetic(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
         todo!()
     }
 
-    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+    async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         let pool = self.pool.clone();
         let account_id = account_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -465,7 +468,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
+    async fn load_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
         let pool = self.pool.clone();
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -486,7 +492,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
         todo!()
     }
 
@@ -842,12 +848,10 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         let result: anyhow::Result<()> = match cmd {
             DatabaseQuery::Close => Ok(()),
-            DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value)
-                .await
-                .map_err(anyhow::Error::from),
-            DatabaseQuery::AddCurrency(currency) => DatabaseQueries::add_currency(pool, currency)
-                .await
-                .map_err(anyhow::Error::from),
+            DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value).await,
+            DatabaseQuery::AddCurrency(currency) => {
+                DatabaseQueries::add_currency(pool, currency).await
+            }
             DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
                 InstrumentAny::Betting(instrument) => {
                     DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument)).await

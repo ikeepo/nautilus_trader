@@ -29,20 +29,15 @@
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// #![deny(clippy::missing_errors_doc)]
-
-// TODO: We still rely on `IntoPy` for now, so temporarily ignore
-// these deprecations until fully migrated to `IntoPyObject`.
-#![allow(deprecated)]
+#![deny(clippy::missing_errors_doc)]
 
 pub mod backoff;
 pub mod http;
 pub mod mode;
+pub mod ratelimiter;
 pub mod socket;
 pub mod websocket;
 
-#[allow(dead_code)]
-mod ratelimiter;
 mod tls;
 
 #[cfg(feature = "python")]

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::cache::{database::CacheDatabaseAdapter, Cache};
+use nautilus_common::cache::{Cache, database::CacheDatabaseAdapter};
 
 #[must_use]
 pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
@@ -26,18 +26,15 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 mod serial_tests {
     use std::time::Duration;
 
-    use nautilus_common::{
-        cache::database::CacheDatabaseAdapter,
-        testing::{wait_until, wait_until_async},
-    };
+    use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{
-            stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
             Instrument, InstrumentAny,
+            stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
         },
         orders::builder::OrderTestBuilder,
         types::{Currency, Quantity},
@@ -106,15 +103,17 @@ mod serial_tests {
 
         // Insert into database and wait
         database.add_order(&market_order, None).unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 let order = database
                     .load_order(&market_order.client_order_id())
+                    .await
                     .unwrap();
                 order.is_some()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Load orders and build indexes
         cache.cache_orders().await.unwrap();
@@ -144,13 +143,14 @@ mod serial_tests {
 
         // Insert into database and wait
         database.add_account(&account).unwrap();
-        wait_until(
-            || {
-                let account = database.load_account(&account.id()).unwrap();
+        wait_until_async(
+            || async {
+                let account = database.load_account(&account.id()).await.unwrap();
                 account.is_some()
             },
             Duration::from_secs(2),
-        );
+        )
+        .await;
 
         // Load accounts and build indexes
         cache.cache_accounts().await.unwrap();

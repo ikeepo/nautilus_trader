@@ -23,17 +23,17 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
+    UnixNanos,
     correctness::{self, FAILED},
     datetime::{add_n_months_nanos, subtract_n_months_nanos},
-    UnixNanos,
 };
 use nautilus_model::{
     data::{
-        bar::{get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         QuoteTick, TradeTick,
+        bar::{Bar, BarType, get_bar_interval_ns, get_time_bar_start},
     },
     enums::{AggregationSource, BarAggregation, BarIntervalType},
-    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
 pub trait BarAggregator {
@@ -62,6 +62,7 @@ pub trait BarAggregator {
             self.update(trade.price, trade.size, trade.ts_event);
         }
     }
+    /// Updates the aggregator with the given bar.
     fn handle_bar(&mut self, bar: Bar) {
         if !self.await_partial() {
             self.update_bar(bar, bar.volume, bar.ts_init);
@@ -1126,7 +1127,7 @@ mod tests {
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
-        instruments::{stubs::*, CurrencyPair, Equity, InstrumentAny},
+        instruments::{CurrencyPair, Equity, InstrumentAny, stubs::*},
         types::{Price, Quantity},
     };
     use rstest::rstest;

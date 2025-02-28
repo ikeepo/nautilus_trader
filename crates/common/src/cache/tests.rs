@@ -23,12 +23,15 @@ mod tests {
         data::{Bar, QuoteTick, TradeTick},
         enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
         events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{AccountId, ClientOrderId, PositionId, Venue},
-        instruments::{stubs::*, CurrencyPair, InstrumentAny, SyntheticInstrument},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
+        instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::*},
         orderbook::OrderBook,
-        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            builder::OrderTestBuilder,
+            stubs::{TestOrderEventStubs, TestOrdersGenerator},
+        },
         position::Position,
-        types::{Price, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use rstest::{fixture, rstest};
 
@@ -360,6 +363,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_correct_order_indexing(mut cache: Cache) {
+        let binance = Venue::from("BINANCE");
+        let bybit = Venue::from("BYBIT");
+        let mut orders_generator = TestOrdersGenerator::new(OrderType::Limit);
+        orders_generator.add_venue_and_total_instruments(bybit, 10);
+        orders_generator.add_venue_and_total_instruments(binance, 10);
+        orders_generator.set_orders_per_instrument(2);
+        let orders = orders_generator.build();
+        // There will be 2 Venues * 10 Instruments * 2 Orders = 40 Orders
+        assert_eq!(orders.len(), 40);
+        for order in orders {
+            cache.add_order(order, None, None, false).unwrap();
+        }
+        assert_eq!(cache.orders(None, None, None, None).len(), 40);
+        assert_eq!(cache.orders(Some(&bybit), None, None, None).len(), 20);
+        assert_eq!(cache.orders(Some(&binance), None, None, None).len(), 20);
+        assert_eq!(
+            cache
+                .orders(
+                    Some(&bybit),
+                    Some(&InstrumentId::from("SYMBOL-0.BYBIT")),
+                    None,
+                    None
+                )
+                .len(),
+            2
+        );
+        assert_eq!(
+            cache
+                .orders(
+                    Some(&binance),
+                    Some(&InstrumentId::from("SYMBOL-0.BINANCE")),
+                    None,
+                    None
+                )
+                .len(),
+            2
+        );
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_cache_positions_when_no_database(mut cache: Cache) {
         assert!(cache.cache_positions().await.is_ok());
@@ -671,5 +715,87 @@ mod tests {
         let result = cache.account_for_venue(&venue);
         assert!(result.is_some());
         assert_eq!(*result.unwrap(), account);
+    }
+
+    #[rstest]
+    fn test_get_mark_xrate_returns_none(cache: Cache) {
+        // When no mark xrate is set for (USD, EUR), it should return None
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_set_and_get_mark_xrate(mut cache: Cache) {
+        // Set a mark xrate for (USD, EUR) and check both forward and inverse rates
+        let xrate = 1.25;
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), xrate);
+        assert_eq!(
+            cache.get_mark_xrate(Currency::USD(), Currency::EUR()),
+            Some(xrate)
+        );
+        assert_eq!(
+            cache.get_mark_xrate(Currency::EUR(), Currency::USD()),
+            Some(1.0 / xrate)
+        );
+    }
+
+    #[rstest]
+    fn test_clear_mark_xrate(mut cache: Cache) {
+        // Set a rate and then clear the forward key
+        let xrate = 1.25;
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), xrate);
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_some()
+        );
+        cache.clear_mark_xrate(Currency::USD(), Currency::EUR());
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
+        assert_eq!(
+            cache.get_mark_xrate(Currency::EUR(), Currency::USD()),
+            Some(1.0 / xrate)
+        );
+    }
+
+    #[rstest]
+    fn test_clear_mark_xrates(mut cache: Cache) {
+        // Set two mark xrates and then clear them all
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 1.25);
+        cache.set_mark_xrate(Currency::AUD(), Currency::USD(), 0.75);
+        cache.clear_mark_xrates();
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::EUR())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::EUR(), Currency::USD())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::AUD(), Currency::USD())
+                .is_none()
+        );
+        assert!(
+            cache
+                .get_mark_xrate(Currency::USD(), Currency::AUD())
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "xrate was zero")]
+    fn test_set_mark_xrate_panics_on_zero(mut cache: Cache) {
+        // Setting a mark xrate of zero should panic
+        cache.set_mark_xrate(Currency::USD(), Currency::EUR(), 0.0);
     }
 }
