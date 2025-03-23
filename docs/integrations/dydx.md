@@ -18,21 +18,21 @@ To install the latest `nautilus_trader` package along with the `dydx` dependenci
 pip install -U "nautilus_trader[dydx]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras dydx
+uv install --extra dydx
 ```
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full dYdX integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The dYdX adapter includes multiple components, which can be used together or separately depending
+on the use case.
 
 - `DYDXHttpClient`: Low-level HTTP API connectivity.
 - `DYDXWebSocketClient`: Low-level WebSocket API connectivity.

@@ -14,15 +14,15 @@ To install the latest `nautilus_trader` package along with the `betfair` depende
 pip install -U "nautilus_trader[betfair]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras betfair
+uv sync --extra betfair
 ```
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
 
 ## Betfair documentation
 
@@ -65,6 +65,7 @@ Best practice is to manage your credentials using environment variables.
 ## Overview
 
 The following adapter classes are available:
+
 - `BetfairInstrumentProvider` which enables querying the Betfair market catalogue for betting markets, which are then converted into Nautilus "instruments".
 - `BetfairDataClient` which connects to the Exchange Stream API and streams market data.
 - `BetfairExecutionClient` which enables the retrieval of account information and execution and updates for orders (or bets).

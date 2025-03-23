@@ -65,6 +65,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
@@ -581,7 +582,12 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 
@@ -733,30 +739,38 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
         return reports
 
-    def _handle_ws_message(self, raw: bytes) -> None:
+    def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
+            ws_message_channel = ws_message.channel
+            ws_message_type = ws_message.type
 
-            if ws_message.channel == "v4_block_height" and ws_message.type == "channel_data":
-                self._handle_block_height_channel_data(raw)
-            elif ws_message.channel == "v4_subaccounts" and ws_message.type == "channel_data":
-                self._handle_subaccounts_channel_data(raw)
-            elif ws_message.channel == "v4_markets" and ws_message.type == "channel_data":
-                self._handle_markets(raw)
-            elif ws_message.channel == "v4_block_height" and ws_message.type == "subscribed":
-                self._handle_block_height_subscribed(raw)
-            elif ws_message.channel == "v4_subaccounts" and ws_message.type == "subscribed":
-                self._handle_subaccounts_subscribed(raw)
-            elif ws_message.channel == "v4_markets" and ws_message.type == "subscribed":
-                self._handle_markets_subscribed(raw)
-            elif ws_message.type == "unsubscribed":
+            if ws_message_type == "channel_data":
+                if ws_message_channel == "v4_block_height":
+                    self._handle_block_height_channel_data(raw)
+                elif ws_message_channel == "v4_subaccounts":
+                    self._handle_subaccounts_channel_data(raw)
+                elif ws_message_channel == "v4_markets":
+                    self._handle_markets(raw)
+                else:
+                    self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
+            elif ws_message_type == "subscribed":
+                if ws_message_channel == "v4_block_height":
+                    self._handle_block_height_subscribed(raw)
+                elif ws_message_channel == "v4_subaccounts":
+                    self._handle_subaccounts_subscribed(raw)
+                elif ws_message_channel == "v4_markets":
+                    self._handle_markets_subscribed(raw)
+                else:
+                    self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
+            elif ws_message_type == "unsubscribed":
                 self._log.info(
-                    f"Unsubscribed from channel {ws_message.channel} for {ws_message.id}",
+                    f"Unsubscribed from channel {ws_message_channel} for {ws_message.id}",
                 )
-            elif ws_message.type == "connected":
+            elif ws_message_type == "connected":
                 self._log.info("Websocket connected")
             else:
-                self._log.error(f"Unknown message `{ws_message.type}`: {raw.decode()}")
+                self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 

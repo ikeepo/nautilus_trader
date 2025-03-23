@@ -10,14 +10,15 @@ jobs:
   pre-commit:
     name: pre-commit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-      checks: write
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -26,7 +27,7 @@ jobs:
           free-disk-space: "true"
 
       - name: Run pre-commit
-        run: make pre-commit
+        run: pre-commit run --all-files
 
   build-linux-standard-precision:
     strategy:
@@ -66,10 +67,15 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -101,7 +107,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
   build-linux:
     strategy:
@@ -141,10 +147,15 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -176,7 +187,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -205,8 +216,14 @@ jobs:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -226,7 +243,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -257,8 +274,14 @@ jobs:
       PARALLEL_BUILD: false
       RUST_BACKTRACE: 1
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -276,7 +299,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -299,10 +322,15 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Publish wheels
         uses: ./.github/actions/publish-wheels
@@ -325,10 +353,15 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_REGION: "auto"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     steps:
+      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Publish wheels
         uses: ./.github/actions/publish-wheels

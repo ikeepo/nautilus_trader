@@ -57,6 +57,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.stats import basis_points_as_percentage
@@ -255,35 +256,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._active_markets.add(condition_id)
 
-    async def _update_allowances(self, instrument_ids: list[InstrumentId]) -> None:
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.COLLATERAL,
-            signature_type=self._config.signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-        for instrument_id in instrument_ids:
-            token_id = get_polymarket_token_id(instrument_id)
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            self._log.info(f"Updating {params}")
-            await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            response: dict[str, Any] = await asyncio.to_thread(
-                self._http_client.get_balance_allowance,
-                params,
-            )
-            self._log.info(str(response))
-
     async def _update_account_state(self) -> None:
         self._log.info("Checking account balance")
 
@@ -375,14 +347,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if order.client_order_id in reported_client_order_ids:
                     continue  # Already reported
 
-                order_status_command = GenerateOrderStatusReport(
+                command = GenerateOrderStatusReport(
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     command_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
-                maybe_report = await self.generate_order_status_report(order_status_command)
+                maybe_report = await self.generate_order_status_report(command)
                 if maybe_report:
                     reports.append(maybe_report)
 
@@ -392,7 +364,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             known_venue_order_ids.update({r.venue_order_id for r in reports})
 
             # Check fills to generate order reports
-            fill_reports_command = GenerateFillReports(
+            command = GenerateFillReports(
                 instrument_id=instrument_id,
                 venue_order_id=None,
                 start=None,
@@ -400,7 +372,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            fill_reports = await self.generate_fill_reports(fill_reports_command)
+            fill_reports = await self.generate_fill_reports(command)
             if fill_reports and not known_venue_order_ids:
                 self._log.warning(
                     "No previously known venue order IDs found in cache or from active orders",
@@ -477,7 +449,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 
@@ -714,7 +691,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 
@@ -753,7 +730,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 

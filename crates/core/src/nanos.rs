@@ -38,6 +38,7 @@ pub struct UnixNanos(u64);
 
 impl UnixNanos {
     /// Creates a new [`UnixNanos`] instance.
+    #[must_use]
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
@@ -111,6 +112,18 @@ impl PartialOrd<Option<u64>> for UnixNanos {
             Some(value) => self.0.partial_cmp(value),
             None => Some(Ordering::Greater),
         }
+    }
+}
+
+impl PartialEq<UnixNanos> for u64 {
+    fn eq(&self, other: &UnixNanos) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialOrd<UnixNanos> for u64 {
+    fn partial_cmp(&self, other: &UnixNanos) -> Option<Ordering> {
+        self.partial_cmp(&other.0)
     }
 }
 
@@ -232,14 +245,14 @@ impl From<UnixNanos> for DateTime<Utc> {
 
 impl<'de> Deserialize<'de> for UnixNanos {
     /// Deserializes a `UnixNanos` from various formats:
-    /// * Integer values are interpreted as nanoseconds since the UNIX epoch
-    /// * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds)
+    /// * Integer values are interpreted as nanoseconds since the UNIX epoch.
+    /// * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
     /// * String values may be:
     ///   - A numeric string (interpreted as nanoseconds).
     ///   - A floating-point string (interpreted as seconds, converted to nanoseconds).
     ///   - An RFC 3339 formatted timestamp (ISO 8601 with timezone).
     ///
-    /// Negative timestamps are rejected with an error.
+    /// Negative timestamps are invalid and will result in an error.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -516,7 +529,7 @@ mod tests {
         let later_nanos = UnixNanos::from(later);
 
         // Calculate expected duration in nanoseconds
-        let expected_duration = 1 * 60 * 60 * 1_000_000_000 + // 1 hour
+        let expected_duration = 60 * 60 * 1_000_000_000 + // 1 hour
         30 * 60 * 1_000_000_000 + // 30 minutes
         45 * 1_000_000_000 + // 45 seconds
         500_000_000; // 500 million nanoseconds

@@ -27,6 +27,8 @@ from nautilus_trader.core.nautilus_pyo3 import OwnOrderBook
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
+from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
 
 
 # ------------------------------------------------------------------------------
@@ -34,15 +36,19 @@ from nautilus_trader.core.nautilus_pyo3 import TimeInForce
 # ------------------------------------------------------------------------------
 def test_own_book_order_creation():
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-12345"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     assert order.client_order_id == ClientOrderId("O-12345")
@@ -55,15 +61,19 @@ def test_own_book_order_creation():
 
 def test_own_book_order_exposure():
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-12345"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     assert order.exposure() == 1000.0  # 100.0 * 10.0
@@ -78,15 +88,19 @@ def test_own_book_order_exposure():
 )
 def test_own_book_order_signed_size(side, expected):
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-12345"),
+        venue_order_id=VenueOrderId("1"),
         side=side,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     assert order.signed_size() == expected
@@ -94,23 +108,27 @@ def test_own_book_order_signed_size(side, expected):
 
 def test_own_book_order_repr():
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-12345"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     expected_repr = (
-        "OwnBookOrder(client_order_id=O-12345, side=BUY, price=100.00, size=10, "
-        "order_type=LIMIT, time_in_force=GTC, ts_init=0)"
+        'OwnBookOrder(trader_id=TRADER-001, client_order_id=O-12345, venue_order_id=Some(u!("1")), side=BUY, price=100.00, size=10, '
+        "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_last=2, ts_accepted=2, ts_submitted=1, ts_init=1)"
     )
     assert repr(order) == expected_repr
-    assert str(order) == "O-12345,BUY,100.00,10,LIMIT,GTC,0"
+    assert str(order) == 'TRADER-001,O-12345,Some(u!("1")),BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1,1'
 
 
 # ------------------------------------------------------------------------------
@@ -124,7 +142,7 @@ def test_own_order_book_creation():
     book = OwnOrderBook(instrument_id)
 
     assert book.instrument_id == instrument_id
-    assert book.event_count == 0
+    assert book.update_count == 0
     assert book.ts_last == 0
 
 
@@ -140,38 +158,46 @@ def test_own_order_book_add_update_delete():
 
     # Create initial order
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-123"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     # 1) Add order
     book.add(order)
-    assert book.event_count == 1  # Add increments the event count
+    assert book.update_count == 1  # Add increments the event count
     bids_map = book.bids_to_dict()
     assert len(bids_map) == 1
     assert Price(100.0, 2).as_decimal() in bids_map
 
     # 2) Update order (increase size from 10 -> 15)
     updated_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-123"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(15.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     book.update(updated_order)
-    assert book.event_count == 2  # Update increments the event count
+    assert book.update_count == 2  # Update increments the event count
 
     # Check updated size
     bids_map = book.bids_to_dict()
@@ -183,7 +209,7 @@ def test_own_order_book_add_update_delete():
     book.delete(order)
     # Depending on how your book logic is implemented,
     # count might now be 3 (since delete is an event).
-    assert book.event_count == 3, "Delete should increment event count"
+    assert book.update_count == 3, "Delete should increment event count"
 
     # Confirm no bids left
     assert len(book.bids_to_dict()) == 0
@@ -199,22 +225,26 @@ def test_own_order_book_clear():
     # Add a single order (BUY)
     book.add(
         OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
             client_order_id=ClientOrderId("O-123"),
+            venue_order_id=VenueOrderId("1"),
             side=OrderSide.BUY,
             price=Price(100.0, 2),
             size=Quantity(10.0, 0),
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_submitted=1,
+            ts_init=1,
         ),
     )
-    assert book.event_count == 1
+    assert book.update_count == 1
 
     # Call clear() -> typically increments event count
     book.clear()
-    assert book.event_count == 1
+    assert book.update_count == 1
     assert len(book.bids_to_dict()) == 0
     assert len(book.asks_to_dict()) == 0
 
@@ -236,15 +266,19 @@ def test_own_order_book_bids_asks_as_map(side):
 
     # Create an order matching the parameterized side (BUY or SELL)
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-123"),
+        venue_order_id=VenueOrderId("1"),
         side=side,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     book.add(order)
 
@@ -280,18 +314,24 @@ def test_own_order_book_fifo_same_price():
 
     # Add multiple orders at the same price
     order1 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-1"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=1,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     order2 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-2"),
+        venue_order_id=VenueOrderId("2"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(5.0, 0),
@@ -299,7 +339,9 @@ def test_own_order_book_fifo_same_price():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=2,
-        ts_init=0,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     book.add(order1)
     book.add(order2)
@@ -324,7 +366,9 @@ def test_own_order_book_price_change():
     book = OwnOrderBook(instrument_id)
 
     order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-777"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
@@ -332,6 +376,8 @@ def test_own_order_book_price_change():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=10,
+        ts_accepted=10,
+        ts_submitted=1,
         ts_init=0,
     )
     book.add(order)
@@ -339,7 +385,9 @@ def test_own_order_book_price_change():
 
     # Update to new price=101
     updated = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-777"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(101.0, 2),
         size=Quantity(10.0, 0),
@@ -347,6 +395,8 @@ def test_own_order_book_price_change():
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
         ts_last=11,
+        ts_accepted=11,
+        ts_submitted=1,
         ts_init=0,
     )
     book.update(updated)
@@ -371,62 +421,82 @@ def test_own_order_book_bid_ask_quantity():
 
     # Add multiple orders at the same price level (bids)
     bid_order1 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-1"),
+        venue_order_id=VenueOrderId("1"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(10.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     bid_order2 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-2"),
+        venue_order_id=VenueOrderId("2"),
         side=OrderSide.BUY,
         price=Price(100.0, 2),
         size=Quantity(15.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     # Add an order at a different price level (bids)
     bid_order3 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-3"),
+        venue_order_id=VenueOrderId("3"),
         side=OrderSide.BUY,
         price=Price(99.5, 2),
         size=Quantity(20.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     # Add orders at different price levels (asks)
     ask_order1 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-4"),
+        venue_order_id=VenueOrderId("4"),
         side=OrderSide.SELL,
         price=Price(101.0, 2),
         size=Quantity(12.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
     ask_order2 = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId("O-5"),
+        venue_order_id=VenueOrderId("5"),
         side=OrderSide.SELL,
         price=Price(101.0, 2),
         size=Quantity(8.0, 0),
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.GTC,
         status=OrderStatus.ACCEPTED,
-        ts_last=0,
-        ts_init=0,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
     )
 
     book.add(bid_order1)
@@ -512,15 +582,19 @@ def test_own_order_book_quantities_parametrized(
     # Add orders based on the test parameters
     for i, (side, price, size) in enumerate(orders):
         order = OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
             client_order_id=ClientOrderId(f"O-{i+1}"),
+            venue_order_id=VenueOrderId("i"),
             side=side,
             price=Price(price, 2),
             size=Quantity(size, 0),
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
             status=OrderStatus.ACCEPTED,
-            ts_last=0,
-            ts_init=0,
+            ts_last=2,
+            ts_accepted=2,
+            ts_submitted=1,
+            ts_init=1,
         )
         book.add(order)
 
@@ -529,3 +603,267 @@ def test_own_order_book_quantities_parametrized(
 
     assert dict(bid_quantities) == expected_bid_quantities
     assert dict(ask_quantities) == expected_ask_quantities
+
+
+def test_bids_to_dict_with_status_filter():
+    """
+    Test filtering orders by status in bids_to_dict method.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders with different statuses
+    submitted_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
+        client_order_id=ClientOrderId("O-1"),
+        venue_order_id=VenueOrderId("1"),
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(10.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.SUBMITTED,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
+    )
+
+    accepted_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
+        client_order_id=ClientOrderId("O-2"),
+        venue_order_id=VenueOrderId("2"),
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(15.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
+    )
+
+    canceled_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
+        client_order_id=ClientOrderId("O-3"),
+        venue_order_id=VenueOrderId("3"),
+        side=OrderSide.BUY,
+        price=Price(99.5, 2),
+        size=Quantity(20.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.CANCELED,
+        ts_last=3,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
+    )
+
+    book.add(submitted_order)
+    book.add(accepted_order)
+    book.add(canceled_order)
+
+    # Test with no filter
+    all_orders = book.bids_to_dict()
+    assert len(all_orders) == 2  # Two price levels
+    assert len(all_orders[Price(100.0, 2).as_decimal()]) == 2  # Two orders at 100.00
+
+    # Test with single status filter
+    submitted_orders = book.bids_to_dict(status={OrderStatus.SUBMITTED})
+    assert len(submitted_orders) == 1  # One price level
+    assert len(submitted_orders[Price(100.0, 2).as_decimal()]) == 1
+    assert submitted_orders[Price(100.0, 2).as_decimal()][0].status == OrderStatus.SUBMITTED
+
+    # Test with multiple status filter
+    filtered_orders = book.bids_to_dict(status={OrderStatus.ACCEPTED, OrderStatus.CANCELED})
+    assert len(filtered_orders) == 2  # Two price levels
+    assert len(filtered_orders[Price(100.0, 2).as_decimal()]) == 1
+    assert filtered_orders[Price(100.0, 2).as_decimal()][0].status == OrderStatus.ACCEPTED
+    assert len(filtered_orders[Price(99.5, 2).as_decimal()]) == 1
+    assert filtered_orders[Price(99.5, 2).as_decimal()][0].status == OrderStatus.CANCELED
+
+    # Test with non-existent status
+    empty_orders = book.bids_to_dict(status={OrderStatus.FILLED})
+    assert len(empty_orders) == 0
+
+
+def test_bid_quantity_with_status_filter():
+    """
+    Test filtering by status in bid_quantity method.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add orders with different statuses
+    submitted_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
+        client_order_id=ClientOrderId("O-1"),
+        venue_order_id=None,
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(10.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.SUBMITTED,
+        ts_last=1,
+        ts_accepted=0,
+        ts_submitted=1,
+        ts_init=1,
+    )
+
+    accepted_order = OwnBookOrder(
+        trader_id=TraderId("TRADER-001"),
+        client_order_id=ClientOrderId("O-2"),
+        venue_order_id=VenueOrderId("2"),
+        side=OrderSide.BUY,
+        price=Price(100.0, 2),
+        size=Quantity(15.0, 0),
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        status=OrderStatus.ACCEPTED,
+        ts_last=2,
+        ts_accepted=2,
+        ts_submitted=1,
+        ts_init=1,
+    )
+
+    book.add(submitted_order)
+    book.add(accepted_order)
+
+    # Test with no filter
+    all_quantities = book.bid_quantity()
+    assert len(all_quantities) == 1  # One price level
+    assert all_quantities[Price(100.0, 2).as_decimal()] == Decimal("25")  # 10 + 15
+
+    # Test with status filter
+    submitted_quantities = book.bid_quantity(status={OrderStatus.SUBMITTED})
+    assert len(submitted_quantities) == 1
+    assert submitted_quantities[Price(100.0, 2).as_decimal()] == Decimal("10")
+
+    # Test with non-existent status
+    empty_quantities = book.bid_quantity(status={OrderStatus.FILLED})
+    assert len(empty_quantities) == 0
+
+
+def test_mixed_status_filtering():
+    """
+    Test filtering with orders of different statuses at different prices.
+    """
+    instrument_id = InstrumentId.from_str("AAPL.XNAS")
+    book = OwnOrderBook(instrument_id)
+
+    # Add bid orders with varied statuses and prices
+    book.add(
+        OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
+            client_order_id=ClientOrderId("O-1"),
+            venue_order_id=None,
+            side=OrderSide.BUY,
+            price=Price(100.0, 2),
+            size=Quantity(10.0, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.SUBMITTED,
+            ts_last=2,
+            ts_accepted=2,
+            ts_submitted=1,
+            ts_init=1,
+        ),
+    )
+
+    book.add(
+        OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
+            client_order_id=ClientOrderId("O-2"),
+            venue_order_id=VenueOrderId("2"),
+            side=OrderSide.BUY,
+            price=Price(100.0, 2),
+            size=Quantity(20.0, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.ACCEPTED,
+            ts_last=2,
+            ts_accepted=2,
+            ts_submitted=1,
+            ts_init=1,
+        ),
+    )
+
+    book.add(
+        OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
+            client_order_id=ClientOrderId("O-3"),
+            venue_order_id=None,
+            side=OrderSide.BUY,
+            price=Price(99.0, 2),
+            size=Quantity(15.0, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.SUBMITTED,
+            ts_last=1,
+            ts_accepted=0,
+            ts_submitted=1,
+            ts_init=1,
+        ),
+    )
+
+    book.add(
+        OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
+            client_order_id=ClientOrderId("O-4"),
+            venue_order_id=None,
+            side=OrderSide.SELL,
+            price=Price(101.0, 2),
+            size=Quantity(5.0, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.SUBMITTED,
+            ts_last=1,
+            ts_accepted=0,
+            ts_submitted=1,
+            ts_init=1,
+        ),
+    )
+
+    book.add(
+        OwnBookOrder(
+            trader_id=TraderId("TRADER-001"),
+            client_order_id=ClientOrderId("O-5"),
+            venue_order_id=VenueOrderId("5"),
+            side=OrderSide.SELL,
+            price=Price(101.0, 2),
+            size=Quantity(25.0, 0),
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            status=OrderStatus.ACCEPTED,
+            ts_last=2,
+            ts_accepted=2,
+            ts_submitted=1,
+            ts_init=1,
+        ),
+    )
+
+    # Filter both sides by SUBMITTED status
+    submitted_bids = book.bids_to_dict(status={OrderStatus.SUBMITTED})
+    submitted_asks = book.asks_to_dict(status={OrderStatus.SUBMITTED})
+
+    assert len(submitted_bids) == 2
+    assert len(submitted_bids[Price(100.0, 2).as_decimal()]) == 1
+    assert len(submitted_bids[Price(99.0, 2).as_decimal()]) == 1
+    assert submitted_bids[Price(100.0, 2).as_decimal()][0].size == Quantity(10.0, 0)
+
+    assert len(submitted_asks) == 1
+    assert len(submitted_asks[Price(101.0, 2).as_decimal()]) == 1
+    assert submitted_asks[Price(101.0, 2).as_decimal()][0].size == Quantity(5.0, 0)
+
+    # Check quantities with ACCEPTED filter
+    accepted_bid_qty = book.bid_quantity(status={OrderStatus.ACCEPTED})
+    accepted_ask_qty = book.ask_quantity(status={OrderStatus.ACCEPTED})
+
+    assert len(accepted_bid_qty) == 1
+    assert accepted_bid_qty[Price(100.0, 2).as_decimal()] == Decimal("20")
+
+    assert len(accepted_ask_qty) == 1
+    assert accepted_ask_qty[Price(101.0, 2).as_decimal()] == Decimal("25")
